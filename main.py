@@ -6,6 +6,17 @@ from datetime import datetime, timedelta
 import asyncio
 import re
 import pytz
+from fastapi.staticfiles import StaticFiles
+
+app = FastAPI()
+
+# Mount the 'static' directory to serve files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+async def read_root():
+    # You'll likely serve your index.html here
+    return {"message": "Hello from the backend!"}
 
 # Initialize FastAPI app
 app = FastAPI(
