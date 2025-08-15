@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import requests
 from bs4 import BeautifulSoup
@@ -6,17 +8,7 @@ from datetime import datetime, timedelta
 import asyncio
 import re
 import pytz
-from fastapi.staticfiles import StaticFiles
-
-app = FastAPI()
-
-# Mount the 'static' directory to serve files
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-@app.get("/")
-async def read_root():
-    # You'll likely serve your index.html here
-    return {"message": "Hello from the backend!"}
+import os
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -24,6 +16,9 @@ app = FastAPI(
     description="API to fetch upcoming coding contests from Codeforces, LeetCode, and CodeChef.",
     version="1.0.0",
 )
+
+# Mount the 'static' directory to serve frontend files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Define a Pydantic model for contest data
 class Contest(BaseModel):
@@ -40,17 +35,15 @@ async def fetch_codeforces_contests():
     url = "https://codeforces.com/api/contest.list"
     try:
         response = requests.get(url, timeout=10)
-        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status()
         data = response.json()
 
         if data['status'] == 'OK':
             contests = []
             for contest in data['result']:
-                # Filter for upcoming contests (status 'BEFORE')
                 if contest['phase'] == 'BEFORE':
                     start_time_ts = contest['startTimeSeconds']
                     duration_seconds = contest['durationSeconds']
-                    # Codeforces API returns timestamps in UTC, convert to datetime
                     start_time_utc = datetime.fromtimestamp(start_time_ts, tz=pytz.utc)
                     contests.append(Contest(
                         name=contest['name'],
@@ -59,7 +52,6 @@ async def fetch_codeforces_contests():
                         duration_seconds=duration_seconds,
                         url=f"https://codeforces.com/contest/{contest['id']}"
                     ))
-            # Sort contests by start time
             return sorted(contests, key=lambda c: c.start_time)
         else:
             print(f"Codeforces API error: {data['comment']}")
@@ -79,11 +71,6 @@ async def fetch_leetcode_contests():
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         contests = []
-
-        # Find contest cards - LeetCode's structure might change, adjust selectors if needed
-        # Look for elements that represent upcoming contests.
-        # This is a common pattern for cards or list items.
-        # We are looking for divs with specific class names that contain contest info.
         contest_cards = soup.find_all('div', class_=re.compile(r'contest-card__container|list-item__2G-P'))
 
         for card in contest_cards:
@@ -98,24 +85,14 @@ async def fetch_leetcode_contests():
                 time_str = time_tag.get_text(strip=True)
                 duration_str = duration_tag.get_text(strip=True)
 
-                # Parse time string (e.g., "Aug 15, 2025 07:30 PM PDT")
                 try:
-                    # LeetCode often displays time in PDT/PST.
-                    # We'll parse it and convert to UTC for consistency.
-                    # Use a flexible parser that can handle common time zone abbreviations or offsets.
-                    # For simplicity, if PDT/PST is assumed, convert to UTC by adding 7 or 8 hours.
-                    # A more robust solution would use a library like `dateutil` to handle timezones properly.
-                    # For this example, let's assume PDT is UTC-7 for summer.
                     dt_obj = datetime.strptime(time_str.replace("PDT", "").replace("PST", "").strip(), "%b %d, %Y %I:%M %p")
-                    # Assume PDT (UTC-7) for now, convert to UTC
                     start_time_local = pytz.timezone('America/Los_Angeles').localize(dt_obj)
                     start_time_utc = start_time_local.astimezone(pytz.utc)
-
                 except ValueError:
                     print(f"Could not parse LeetCode time: {time_str}")
                     continue
 
-                # Parse duration string (e.g., "1h 30m" or "2 hours 30 minutes")
                 duration_seconds = 0
                 if 'h' in duration_str:
                     hours_match = re.search(r'(\d+)\s*h', duration_str)
@@ -125,13 +102,12 @@ async def fetch_leetcode_contests():
                     minutes_match = re.search(r'(\d+)\s*m', duration_str)
                     if minutes_match:
                         duration_seconds += int(minutes_match.group(1)) * 60
-                if 'd' in duration_str: # In case of days, e.g., "2 days"
+                if 'd' in duration_str:
                     days_match = re.search(r'(\d+)\s*d', duration_str)
                     if days_match:
                         duration_seconds += int(days_match.group(1)) * 24 * 3600
 
-                # Only include contests that are truly upcoming (start_time in the future)
-                if start_time_utc > datetime.now(pytz.utc) - timedelta(minutes=5): # Small buffer for recently started
+                if start_time_utc > datetime.now(pytz.utc) - timedelta(minutes=5):
                     contests.append(Contest(
                         name=name,
                         platform="LeetCode",
@@ -155,38 +131,28 @@ async def fetch_codechef_contests():
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         contests = []
-
-        # CodeChef uses tables for contests, look for the "Upcoming Contests" table
-        # Find the table that likely contains "Upcoming Contests"
-        # The structure might vary, so identifying by headers or specific table attributes is key.
         upcoming_contests_div = soup.find('div', class_='contest-table')
         if upcoming_contests_div:
-            # Find the actual table within this div
-            table = upcoming_contests_div.find('table', class_='table') # Assuming a table with class 'table'
-
+            table = upcoming_contests_div.find('table', class_='table')
             if table:
                 rows = table.find_all('tr')
-                # Skip header row
                 for row in rows[1:]:
                     cols = row.find_all('td')
-                    if len(cols) >= 5: # Ensure enough columns for contest data
+                    if len(cols) >= 5:
                         name_tag = cols[0].find('a')
-                        code_tag = cols[1] # Contest Code
+                        code_tag = cols[1]
                         start_time_str = cols[2].get_text(strip=True)
-                        end_time_str = cols[3].get_text(strip=True) # Not directly duration, but can calculate
-                        
+                        end_time_str = cols[3].get_text(strip=True)
+
                         if name_tag:
                             name = name_tag.get_text(strip=True)
                             contest_code = code_tag.get_text(strip=True)
-                            contest_url = f"https://www.codechef.com/{contest_code}" # CodeChef contest URL structure
+                            contest_url = f"https://www.codechef.com/{contest_code}"
 
                             try:
-                                # CodeChef times are usually in IST. Convert to UTC.
-                                # Example: "15 Aug 2025 22:00:00"
                                 start_time_local = datetime.strptime(start_time_str, "%d %b %Y %H:%M:%S")
                                 end_time_local = datetime.strptime(end_time_str, "%d %b %Y %H:%M:%S")
 
-                                # Assuming CodeChef times are in IST (Indian Standard Time, UTC+5:30)
                                 ist_timezone = pytz.timezone('Asia/Kolkata')
                                 start_time_ist = ist_timezone.localize(start_time_local)
                                 end_time_ist = ist_timezone.localize(end_time_local)
@@ -194,7 +160,6 @@ async def fetch_codechef_contests():
                                 start_time_utc = start_time_ist.astimezone(pytz.utc)
                                 duration_seconds = int((end_time_utc - start_time_utc).total_seconds())
 
-                                # Only include contests that are truly upcoming
                                 if start_time_utc > datetime.now(pytz.utc) - timedelta(minutes=5):
                                     contests.append(Contest(
                                         name=name,
@@ -212,6 +177,15 @@ async def fetch_codechef_contests():
         return []
 
 # --- API Endpoints ---
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    """Serves the main HTML page."""
+    html_file_path = os.path.join("static", "index.html")
+    if not os.path.exists(html_file_path):
+        return HTMLResponse(content="<h1>Frontend not found!</h1><p>Please ensure 'static/index.html' exists.</p>", status_code=404)
+    with open(html_file_path, "r") as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content)
 
 @app.get(
     "/contests",
@@ -233,7 +207,6 @@ async def get_all_contests():
     )
     return all_contests
 
-
 @app.get(
     "/contests/{platform_name}",
     response_model=list[Contest],
@@ -241,7 +214,6 @@ async def get_all_contests():
     description="Retrieves a list of upcoming coding contests filtered by a specific platform."
 )
 async def get_contests_by_platform(
-    # Corrected line: FastAPI will infer it's a path parameter
     platform_name: str
 ):
     """
@@ -261,12 +233,3 @@ async def get_contests_by_platform(
         raise HTTPException(status_code=404, detail="Platform not found. Supported platforms are: Codeforces, LeetCode, CodeChef.")
 
     return contests
-
-# Root endpoint for basic health check
-@app.get(
-    "/",
-    summary="API Root",
-    description="Basic health check endpoint."
-)
-async def read_root():
-    return {"message": "Welcome to the Upcoming Contest API! Visit /docs for API documentation."}
