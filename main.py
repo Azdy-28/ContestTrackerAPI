@@ -63,14 +63,21 @@ async def fetch_codeforces_contests():
 async def fetch_leetcode_contests():
     """Web scrapes upcoming contests from LeetCode."""
     url = "https://leetcode.com/contest/"
+    # Use a more specific and current User-Agent string from a real browser
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
     }
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         contests = []
+
         contest_cards = soup.find_all('div', class_=re.compile(r'contest-card__container|list-item__2G-P'))
 
         for card in contest_cards:
@@ -89,6 +96,7 @@ async def fetch_leetcode_contests():
                     dt_obj = datetime.strptime(time_str.replace("PDT", "").replace("PST", "").strip(), "%b %d, %Y %I:%M %p")
                     start_time_local = pytz.timezone('America/Los_Angeles').localize(dt_obj)
                     start_time_utc = start_time_local.astimezone(pytz.utc)
+
                 except ValueError:
                     print(f"Could not parse LeetCode time: {time_str}")
                     continue
@@ -119,7 +127,7 @@ async def fetch_leetcode_contests():
     except requests.exceptions.RequestException as e:
         print(f"Error fetching LeetCode contests: {e}")
         return []
-
+    
 async def fetch_codechef_contests():
     """Web scrapes upcoming contests from CodeChef."""
     url = "https://www.codechef.com/contests"
