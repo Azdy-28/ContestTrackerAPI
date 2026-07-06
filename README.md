@@ -1,6 +1,6 @@
 # Upcoming Contest API
 
-An API that delivers upcoming programming contest information from platforms like Codeforces, LeetCode, and CodeChef.
+An API that delivers upcoming programming contest information from platforms like Codeforces, Codeforces and LeetCode.
 
 ## ✨ Features
 
