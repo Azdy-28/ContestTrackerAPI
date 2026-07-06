@@ -1,6 +1,6 @@
 # Upcoming Contest API
 
-An API that delivers upcoming programming contest information from platforms like Codeforces, Codeforces and LeetCode.
+An API that delivers upcoming programming contest information from platforms like Codeforces and LeetCode.
 
 ## ✨ Features
 
@@ -15,7 +15,7 @@ An API that delivers upcoming programming contest information from platforms lik
 
   * **FastAPI**: A modern, high-performance web framework for building APIs with Python.
   * **Python**: The primary programming language used for the backend logic.
-  * **BeautifulSoup & Requests**: Used for web scraping contest data from LeetCode and CodeChef.
+  * **BeautifulSoup & Requests**: Used for web scraping contest data from Codeforces and LeetCode.
   * **Render**: The cloud platform used for continuous deployment of the API.
 
 ## 📦 Getting Started
